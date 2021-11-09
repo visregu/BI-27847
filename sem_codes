@@ -182,18 +182,27 @@ CREATE TABLE vregu.2022_strategy_sem_theme as
 WITH CTE_SEM_DATA AS
     (
     SELECT
-        pub_adgroup_id,
-        pub_campaign_id,
-        theme_name_english,
-        theme_id,
-        count(1) as cnt
-    FROM 
-        sem.sem_metadata_main
-    GROUP BY
-        pub_adgroup_id,
-        pub_campaign_id,
-        theme_name_english,
-        theme_id
+        sem_metadata_user.pub_adgroup_id,
+        sem_metadata_user.pub_campaign_id,
+        sem_metadata_user.theme_id,
+        sem_metadata_user.theme_name_english
+    FROM
+        sem.sem_metrics_master AS sem_metrics_user
+    LEFT JOIN
+          sem.sem_metadata_main AS sem_metadata_user 
+    ON 
+        (CASE
+            WHEN sem_metrics_user.publisher_name IN ('google_search', 'dsa_search') THEN 0
+            WHEN sem_metrics_user.publisher_name IN ('bing_search', 'bing_dsa')     THEN 1
+            WHEN sem_metrics_user.publisher_name IN ('yahoo_search', 'yahoo_dsa')   THEN 3
+        else -1 END)= sem_metadata_user.publisher_id
+        AND sem_metrics_user.parent_market_code = sem_metadata_user.parent_market_code
+        AND sem_metrics_user.pub_campaign_id    = sem_metadata_user.pub_campaign_id
+        AND sem_metrics_user.pub_adgroup_id     = sem_metadata_user.pub_adgroup_id
+        AND sem_metrics_user.pub_keyword_id     = sem_metadata_user.pub_keyword_id
+    WHERE 
+    (sem_metadata_user.theme_status = 'active') 
+    AND (sem_metrics_user.is_branded_sem = 0)
     )
 
 SELECT
