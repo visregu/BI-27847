@@ -1,0 +1,298 @@
+create temporary macro applynewEntries(newentries string, carrier array<string>)
+if(!array_contains(carrier,newentries), trv_udf.update_collection(carrier,newentries),carrier);
+
+create temporary macro findrawroom(page_logs struct<page_log_detail:map<int,string>, page_id:bigint>, carrier array<string>)
+if(page_logs.page_log_detail[59] is not null, trv_udf.reduce_collection("applynewEntries",array(page_logs.page_log_detail[59]),carrier),carrier);
+
+
+create temporary macro deflaten(element string)
+if(element like '%#%',split(element,'#')[1],0);
+
+create temporary macro deflaten_severe(element array<string>)
+trv_udf.map_collection('deflaten',element);
+
+create temporary macro create_arrays(element string)
+array(element);
+
+create temporary macro split_arrays(element array<string>)
+split(concat_ws("/", element),",");
+
+create temporary macro to_int(element string)
+cast(element as int);
+
+create temporary macro array_to_int(element array<string>)
+trv_udf.map_collection('to_int',element);
+
+create temporary macro sums(element int,element2 int)
+element+element2;
+
+create temporary macro sum_array(element array<int>)
+trv_udf.reduce_collection('sums',element,0);
+
+create temporary macro applynewEntries(newentries string, carrier array<string>)
+if(!array_contains(carrier,newentries), trv_udf.update_collection(carrier,newentries),carrier);
+
+create temporary macro find493Pagelogs(page_logs struct<page_log_detail:map<int,string>, page_id:bigint>, carrier array<string>)
+if(page_logs.page_log_detail[493] is not null and cast(page_logs.page_log_detail[493] as int)>=20, trv_udf.reduce_collection("applynewEntries",array(page_logs.page_log_detail[493]),carrier),carrier);
+
+create temporary macro find205Pagelogs(page_logs struct<page_log_detail:map<int,string>, page_id:bigint>, carrier array<string>)
+if(page_logs.page_log_detail[104] is not null AND split(page_logs.page_log_detail[104],',')[3] in (1,'1'), trv_udf.reduce_collection("applynewEntries",array(split(page_logs.page_log_detail[104],',')[0]),carrier),carrier);
+
+create temporary macro findlosPagelogs(page_logs struct<page_log_detail:map<int,string>, page_id:bigint>, carrier array<string>)
+if(page_logs.page_log_detail[104] is not null AND split(page_logs.page_log_detail[104],',')[3] in (1,'1'), trv_udf.reduce_collection("applynewEntries",array(cast(split(page_logs.page_log_detail[104],',')[1] as int) -cast(split(page_logs.page_log_detail[104],',')[0] as int)),carrier),carrier);
+
+create temporary macro extractField59 ( detailmap map<int,string>  )
+detailmap[59];
+ 
+create temporary macro checkForKidsInRoom (potential_kids_room string)
+coalesce(split(potential_kids_room,",")[1] > 0,false);
+ 
+create temporary macro checkForKidsInAllRooms (potential_kid_rooms string)
+coalesce(size(trv_udf.filter_collection("checkForKidsInRoom",split(substr(potential_kid_rooms,instr(potential_kid_rooms, "#")+1),'#'))) > 0,false);
+ 
+create temporary macro checkForGroups (potential_group string)
+coalesce(split(potential_group,",")[0] > 2,false);
+ 
+create temporary macro checkForGroupsAllRooms (potential_group string)
+coalesce(size(trv_udf.filter_collection("checkForGroups",split(substr(potential_group,instr(potential_group, "#")+1),'#'))) > 0 ,false);
+ 
+create temporary macro checkRooms(potential_group string)
+coalesce(split(potential_group, "#")[0]>1, false);
+
+
+drop table vregu.sem_raw_campaign;
+create table vregu.sem_raw_campaign as
+SELECT 
+    ssm.locale as locale,
+    case 
+        when ssm.traffic_type_parent = 1 then 'Branded'
+        when ssm.traffic_type_parent = 2 then 'SEM'
+        when ssm.traffic_type_parent = 3 then 'SEO'
+        when ssm.traffic_type_parent = 4 then 'DEA'
+        when ssm.traffic_type_parent = 5 then 'CM'
+        else 'other'
+    END as traffic_type,
+    case 
+        when ssm.agent_id in (8,9,10,12,13) then 'Mobile'
+        else 'Desktop'
+    END as device_type,
+    Case 
+        when ssm.entry_page = 2100 then 'Homepage'
+        when ssm.entry_page = 2111 then 'Region search'
+        when ssm.entry_page = 2113 then 'City search'
+        when ssm.entry_page = 2114 then 'Perimeter search'
+        when ssm.entry_page = 2115 then 'POI search'
+        when ssm.entry_page = 2116 then 'Item search'
+        else 'other'
+    END as entry_page,
+    case 
+        when size(trv_udf.reduce_collection("find493Pagelogs",ssm.page_log_entries,array()))>0 then "Non standard date"
+        when (array_contains(ssm.page_id_set,2111L) OR array_contains(ssm.page_id_set,21113L) OR array_contains(ssm.page_id_set,2114L) OR array_contains(ssm.page_id_set,2115L) OR array_contains(ssm.page_id_set,2116L)) then "Standard date"
+        else 'no search data'
+    end as standard_date,
+   case  
+       when trv_udf.aggregate_collection('max',trv_udf.map_collection('to_int',trv_udf.reduce_collection("find205Pagelogs",ssm.page_log_entries,array()))) is NULL then 'No search data by the user'
+       when trv_udf.aggregate_collection('max',trv_udf.map_collection('to_int',trv_udf.reduce_collection("find205Pagelogs",ssm.page_log_entries,array()))) BETWEEN 0 and 2 then "0-2 days"
+       when trv_udf.aggregate_collection('max',trv_udf.map_collection('to_int',trv_udf.reduce_collection("find205Pagelogs",ssm.page_log_entries,array()))) BETWEEN 3 and 7 then "3-7 days"
+       when trv_udf.aggregate_collection('max',trv_udf.map_collection('to_int',trv_udf.reduce_collection("find205Pagelogs",ssm.page_log_entries,array()))) BETWEEN 8 and 29 then "8-29 days"
+       when trv_udf.aggregate_collection('max',trv_udf.map_collection('to_int',trv_udf.reduce_collection("find205Pagelogs",ssm.page_log_entries,array()))) BETWEEN 30 and 90 then "30-90 days"
+       when trv_udf.aggregate_collection('max',trv_udf.map_collection('to_int',trv_udf.reduce_collection("find205Pagelogs",ssm.page_log_entries,array()))) > 90 then "91+"
+       else 'other'
+    end as time_to_travel,
+        case  
+       when trv_udf.aggregate_collection('max',trv_udf.map_collection('to_int',trv_udf.reduce_collection("findlosPagelogs",ssm.page_log_entries,array()))) is NULL then 'No search data by the user'
+       when trv_udf.aggregate_collection('max',trv_udf.map_collection('to_int',trv_udf.reduce_collection("findlosPagelogs",ssm.page_log_entries,array()))) BETWEEN 0 and 1 then "1 nights"
+       when trv_udf.aggregate_collection('max',trv_udf.map_collection('to_int',trv_udf.reduce_collection("findlosPagelogs",ssm.page_log_entries,array()))) between 2 and 3 then "2-3 nights"
+       when trv_udf.aggregate_collection('max',trv_udf.map_collection('to_int',trv_udf.reduce_collection("findlosPagelogs",ssm.page_log_entries,array()))) BETWEEN 4 and 6 then "4-6 nights"
+       when trv_udf.aggregate_collection('max',trv_udf.map_collection('to_int',trv_udf.reduce_collection("findlosPagelogs",ssm.page_log_entries,array()))) >7 then "7+ nights"
+       else 'other'
+    end as los,
+    case 
+        when array_contains(ssm.page_id_set,2111L) AND !array_contains(ssm.page_id_set,2113L) AND !array_contains(ssm.page_id_set,2114L) AND !array_contains(ssm.page_id_set,2115L) AND !array_contains(ssm.page_id_set,2116L) then 'only region search'
+        when !array_contains(ssm.page_id_set,2111L) AND array_contains(ssm.page_id_set,2113L) AND !array_contains(ssm.page_id_set,2114L) AND !array_contains(ssm.page_id_set,2115L) AND !array_contains(ssm.page_id_set,2116L) then 'only city search'
+        when !array_contains(ssm.page_id_set,2111L) AND !array_contains(ssm.page_id_set,2113L) AND array_contains(ssm.page_id_set,2114L) AND !array_contains(ssm.page_id_set,2115L) AND !array_contains(ssm.page_id_set,2116L) then 'only perimeter search'
+        when !array_contains(ssm.page_id_set,2111L) AND !array_contains(ssm.page_id_set,2113L) AND !array_contains(ssm.page_id_set,2114L) AND array_contains(ssm.page_id_set,2115L) AND !array_contains(ssm.page_id_set,2116L) then 'only POI search'
+        when !array_contains(ssm.page_id_set,2111L) AND !array_contains(ssm.page_id_set,2113L) AND !array_contains(ssm.page_id_set,2114L) AND !array_contains(ssm.page_id_set,2115L) AND array_contains(ssm.page_id_set,2116L) then 'only item search'
+        when array_contains(ssm.page_id_set,2111L) OR array_contains(ssm.page_id_set,2113L) OR array_contains(ssm.page_id_set,2114L) OR array_contains(ssm.page_id_set,2115L) OR array_contains(ssm.page_id_set,2116L) then 'multiple type of searches'
+        else 'other' 
+    end as search_types
+	, case 
+		when size( trv_udf.filter_collection( "checkForKidsInAllRooms", trv_udf.map_collection( "extractField59", page_log_entries.page_log_detail))) > 0 then 'kids'
+		when trv_udf.aggregate_collection('max',trv_udf.map_collection('sum_array',trv_udf.map_collection('array_to_int',trv_udf.map_collection('deflaten_severe',trv_udf.map_collection('split_arrays',trv_udf.map_collection('create_arrays',trv_udf.reduce_collection("findrawroom",ssm.page_log_entries,array()))))))) = 1 then 'Single traveler'
+        when trv_udf.aggregate_collection('max',trv_udf.map_collection('sum_array',trv_udf.map_collection('array_to_int',trv_udf.map_collection('deflaten_severe',trv_udf.map_collection('split_arrays',trv_udf.map_collection('create_arrays',trv_udf.reduce_collection("findrawroom",ssm.page_log_entries,array()))))))) = 2 then 'Couple travel'
+        when trv_udf.aggregate_collection('max',trv_udf.map_collection('sum_array',trv_udf.map_collection('array_to_int',trv_udf.map_collection('deflaten_severe',trv_udf.map_collection('split_arrays',trv_udf.map_collection('create_arrays',trv_udf.reduce_collection("findrawroom",ssm.page_log_entries,array()))))))) between 3 and 4 then 'Family travel/medium group'
+        when trv_udf.aggregate_collection('max',trv_udf.map_collection('sum_array',trv_udf.map_collection('array_to_int',trv_udf.map_collection('deflaten_severe',trv_udf.map_collection('split_arrays',trv_udf.map_collection('create_arrays',trv_udf.reduce_collection("findrawroom",ssm.page_log_entries,array()))))))) > 4 then 'large group'
+        else 'other'
+    end as group_information_kid,
+    ssm.cip_detail.cip_publisher as cip_publisher,
+    ssm.traffic_type_child,
+    SPLIT(ssm.sem_params,',')[10] as pub_campaign_id,
+    count(1) as sessions, 
+    sum(if(ssm.pc_cos>0,1,0)) as sessions_with_clickouts,
+    sum(if(ssm.is_bouncer=1,1,0)) as bouncer_sessions,
+    sum(if(ssm.bookings>0,1,0)) as session_with_bookings,
+    sum(ssm.pc_cos) as clickouts,
+    sum(ssm.bookings) as bookings,
+    sum(ssm.booking_amount) as booking_amount,
+    sum(ssm.clickout_rev)/100 as clickout_rev_euros,
+    sum(if(ssm.engaged_cos.ecos_count_def_1>0,1,0)) as sessions_with_engaged_clickouts,
+    sum(ssm.engaged_cos.ecos_count_def_1) as engaged_clickouts
+FROM trivago_analytic.session_stats_master ssm 
+WHERE 
+    ssm.ymd >= 20210101 
+    AND ssm.is_app = 0 
+    AND ssm.is_core 
+    AND ssm.soap_type = 0 
+   
+GROUP BY
+        ssm.locale,
+    case 
+        when ssm.traffic_type_parent = 1 then 'Branded'
+        when ssm.traffic_type_parent = 2 then 'SEM'
+        when ssm.traffic_type_parent = 3 then 'SEO'
+        when ssm.traffic_type_parent = 4 then 'DEA'
+        when ssm.traffic_type_parent = 5 then 'CM'
+        else 'other'
+    END,
+    case 
+        when ssm.agent_id in (8,9,10,12,13) then 'Mobile'
+        else 'Desktop'
+    END,
+    Case 
+        when ssm.entry_page = 2100 then 'Homepage'
+        when ssm.entry_page = 2111 then 'Region search'
+        when ssm.entry_page = 2113 then 'City search'
+        when ssm.entry_page = 2114 then 'Perimeter search'
+        when ssm.entry_page = 2115 then 'POI search'
+        when ssm.entry_page = 2116 then 'Item search'
+        else 'other'
+    END,
+    case 
+        when size(trv_udf.reduce_collection("find493Pagelogs",ssm.page_log_entries,array()))>0 then "Non standard date"
+        when (array_contains(ssm.page_id_set,2111L) OR array_contains(ssm.page_id_set,21113L) OR array_contains(ssm.page_id_set,2114L) OR array_contains(ssm.page_id_set,2115L) OR array_contains(ssm.page_id_set,2116L)) then "Standard date"
+        else 'no search data'
+    end,
+   case  
+       when trv_udf.aggregate_collection('max',trv_udf.map_collection('to_int',trv_udf.reduce_collection("find205Pagelogs",ssm.page_log_entries,array()))) is NULL then 'No search data by the user'
+       when trv_udf.aggregate_collection('max',trv_udf.map_collection('to_int',trv_udf.reduce_collection("find205Pagelogs",ssm.page_log_entries,array()))) BETWEEN 0 and 2 then "0-2 days"
+       when trv_udf.aggregate_collection('max',trv_udf.map_collection('to_int',trv_udf.reduce_collection("find205Pagelogs",ssm.page_log_entries,array()))) BETWEEN 3 and 7 then "3-7 days"
+       when trv_udf.aggregate_collection('max',trv_udf.map_collection('to_int',trv_udf.reduce_collection("find205Pagelogs",ssm.page_log_entries,array()))) BETWEEN 8 and 29 then "8-29 days"
+       when trv_udf.aggregate_collection('max',trv_udf.map_collection('to_int',trv_udf.reduce_collection("find205Pagelogs",ssm.page_log_entries,array()))) BETWEEN 30 and 90 then "30-90 days"
+       when trv_udf.aggregate_collection('max',trv_udf.map_collection('to_int',trv_udf.reduce_collection("find205Pagelogs",ssm.page_log_entries,array()))) > 90 then "91+"
+       else 'other'
+    end ,
+        case  
+       when trv_udf.aggregate_collection('max',trv_udf.map_collection('to_int',trv_udf.reduce_collection("findlosPagelogs",ssm.page_log_entries,array()))) is NULL then 'No search data by the user'
+       when trv_udf.aggregate_collection('max',trv_udf.map_collection('to_int',trv_udf.reduce_collection("findlosPagelogs",ssm.page_log_entries,array()))) BETWEEN 0 and 1 then "1 nights"
+       when trv_udf.aggregate_collection('max',trv_udf.map_collection('to_int',trv_udf.reduce_collection("findlosPagelogs",ssm.page_log_entries,array()))) between 2 and 3 then "2-3 nights"
+       when trv_udf.aggregate_collection('max',trv_udf.map_collection('to_int',trv_udf.reduce_collection("findlosPagelogs",ssm.page_log_entries,array()))) BETWEEN 4 and 6 then "4-6 nights"
+       when trv_udf.aggregate_collection('max',trv_udf.map_collection('to_int',trv_udf.reduce_collection("findlosPagelogs",ssm.page_log_entries,array()))) >7 then "7+ nights"
+       else 'other'
+    end,
+        case 
+        when array_contains(ssm.page_id_set,2111L) AND !array_contains(ssm.page_id_set,2113L) AND !array_contains(ssm.page_id_set,2114L) AND !array_contains(ssm.page_id_set,2115L) AND !array_contains(ssm.page_id_set,2116L) then 'only region search'
+        when !array_contains(ssm.page_id_set,2111L) AND array_contains(ssm.page_id_set,2113L) AND !array_contains(ssm.page_id_set,2114L) AND !array_contains(ssm.page_id_set,2115L) AND !array_contains(ssm.page_id_set,2116L) then 'only city search'
+        when !array_contains(ssm.page_id_set,2111L) AND !array_contains(ssm.page_id_set,2113L) AND array_contains(ssm.page_id_set,2114L) AND !array_contains(ssm.page_id_set,2115L) AND !array_contains(ssm.page_id_set,2116L) then 'only perimeter search'
+        when !array_contains(ssm.page_id_set,2111L) AND !array_contains(ssm.page_id_set,2113L) AND !array_contains(ssm.page_id_set,2114L) AND array_contains(ssm.page_id_set,2115L) AND !array_contains(ssm.page_id_set,2116L) then 'only POI search'
+        when !array_contains(ssm.page_id_set,2111L) AND !array_contains(ssm.page_id_set,2113L) AND !array_contains(ssm.page_id_set,2114L) AND !array_contains(ssm.page_id_set,2115L) AND array_contains(ssm.page_id_set,2116L) then 'only item search'
+        when array_contains(ssm.page_id_set,2111L) OR array_contains(ssm.page_id_set,2113L) OR array_contains(ssm.page_id_set,2114L) OR array_contains(ssm.page_id_set,2115L) OR array_contains(ssm.page_id_set,2116L) then 'multiple type of searches'
+        else 'other' 
+    end
+	, case 
+		when size( trv_udf.filter_collection( "checkForKidsInAllRooms", trv_udf.map_collection( "extractField59", page_log_entries.page_log_detail))) > 0 then 'kids'
+		when trv_udf.aggregate_collection('max',trv_udf.map_collection('sum_array',trv_udf.map_collection('array_to_int',trv_udf.map_collection('deflaten_severe',trv_udf.map_collection('split_arrays',trv_udf.map_collection('create_arrays',trv_udf.reduce_collection("findrawroom",ssm.page_log_entries,array()))))))) = 1 then 'Single traveler'
+        when trv_udf.aggregate_collection('max',trv_udf.map_collection('sum_array',trv_udf.map_collection('array_to_int',trv_udf.map_collection('deflaten_severe',trv_udf.map_collection('split_arrays',trv_udf.map_collection('create_arrays',trv_udf.reduce_collection("findrawroom",ssm.page_log_entries,array()))))))) = 2 then 'Couple travel'
+        when trv_udf.aggregate_collection('max',trv_udf.map_collection('sum_array',trv_udf.map_collection('array_to_int',trv_udf.map_collection('deflaten_severe',trv_udf.map_collection('split_arrays',trv_udf.map_collection('create_arrays',trv_udf.reduce_collection("findrawroom",ssm.page_log_entries,array()))))))) between 3 and 4 then 'Family travel/medium group'
+        when trv_udf.aggregate_collection('max',trv_udf.map_collection('sum_array',trv_udf.map_collection('array_to_int',trv_udf.map_collection('deflaten_severe',trv_udf.map_collection('split_arrays',trv_udf.map_collection('create_arrays',trv_udf.reduce_collection("findrawroom",ssm.page_log_entries,array()))))))) > 4 then 'large group'
+        else 'other'
+    end,
+    ssm.cip_detail.cip_publisher,
+    ssm.traffic_type_child,
+    SPLIT(ssm.sem_params,',')[10];
+    
+
+--DROP TABLE vregu.sem_campaign_reduced;
+
+CREATE TABLE vregu.sem_campaign_reduced as
+
+WITH CTE_SEM_DATA AS
+    (
+    SELECT
+        pub_campaign_id,
+        theme_name_english,
+        theme_id
+    FROM
+        sem.sem_metadata_main_campaign AS sem_campaign
+    WHERE 
+        sem_campaign.publisher_id in (0,1)
+        and sem_campaign.campaign_status='active'
+    GROUP BY 
+        pub_campaign_id,
+        theme_name_english,
+        theme_id
+    )
+
+SELECT
+    ssm.locale,
+    ssm.device_type,
+    ssm.entry_page,
+    ssm.standard_date,
+    ssm.time_to_travel,
+    ssm.los,
+    ssm.search_types,
+    ssm.group_information_kid,
+    sem.theme_id,
+    sem.theme_name_english,
+    sum(sessions) as sessions,
+    sum(ssm.sessions_with_clickouts) as sessions_with_clickouts,
+    sum(ssm.bouncer_sessions) as bouncer_sessions,
+    sum(ssm.session_with_bookings) as sessions_with_bookings,
+    sum(ssm.clickouts) as clickouts,
+    sum(ssm.bookings) as bookings,
+    sum(ssm.booking_amount) as booking_amount,
+    sum(ssm.clickout_rev_euros) as clickout_rev_euros,
+    sum(ssm.sessions_with_engaged_clickouts) as sessions_with_engaged_clickouts,
+    sum(ssm.engaged_clickouts) as engaged_clickouts
+FROM
+    vregu.sem_raw_campaign ssm 
+    LEFT JOIN CTE_SEM_DATA sem on
+        sem.pub_campaign_id = ssm.pub_campaign_id
+WHERE 
+    ssm.traffic_type='SEM'
+    and traffic_type_child not in (205,206)
+GROUP BY
+    ssm.locale,
+    ssm.device_type,
+    ssm.entry_page,
+    ssm.standard_date,
+    ssm.time_to_travel,
+    ssm.los,
+    ssm.search_types,
+    ssm.group_information_kid,
+    sem.theme_id,
+    sem.theme_name_english;
+    
+    
+INSERT OVERWRITE DIRECTORY '/user/vregu/test/exportcsv/sem_theme_ymd'
+ROW FORMAT DELIMITED 
+ FIELDS TERMINATED BY ','
+ COLLECTION ITEMS TERMINATED BY ';'
+ MAP KEYS TERMINATED BY '='
+ LINES TERMINATED BY '\n'
+ NULL DEFINED AS '\\N' 
+STORED AS TEXTFILE
+-- replace your query below:
+SELECT * FROM vregu.2022_strategy_sem_theme
+-- keep the "ORDER BY 1" below, unless your query already ends with an "ORDER BY" clause
+-- this sorts all data into one output file. If you have a really large dataset (question: do you really need a csv file then?), this may cause problems as all data has to go through one reducer.
+ORDER BY 1;
+
+select theme_id,theme_name_english,sum(sessions) from vregu.2022_strategy_sem_theme_ymd group by theme_id,theme_name_english;
+
+SELECT * FROM vregu.sem_campaign_reduced;
+
+SELECT
+        distinct sem_campaign.cip_publisher
+    FROM
+        sem.sem_metadata_main_campaign AS sem_campaign
+    LIMIT 10;
