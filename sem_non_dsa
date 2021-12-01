@@ -296,3 +296,104 @@ SELECT
     FROM
         sem.sem_metadata_main_campaign AS sem_campaign
     LIMIT 10;
+    
+DROP TABLE vregu.sem_campaign_reduced;
+
+CREATE TABLE vregu.sem_campaign_reduced as
+
+WITH CTE_SEM_DATA AS
+    (
+    SELECT
+        pub_campaign_id,
+        theme_name_english,
+        theme_id,
+        sem_campaign.cip_publisher
+    FROM
+        sem.sem_metadata_main_campaign AS sem_campaign
+    WHERE 
+        --sem_campaign.publisher_id in (0,1)
+        sem_campaign.campaign_status='active'
+        and sem_campaign.pub_campaign_id is not null
+        --and sem_campaign.theme_id>1
+    GROUP BY 
+        pub_campaign_id,
+        theme_name_english,
+        theme_id,
+        sem_campaign.cip_publisher
+    )
+
+SELECT
+    ssm.locale,
+    ssm.device_type,
+    ssm.entry_page,
+    ssm.standard_date,
+    ssm.time_to_travel,
+    ssm.los,
+    ssm.search_types,
+    ssm.group_information_kid,
+    sem.theme_id,
+    sem.theme_name_english,
+    ssm.cip_publisher,
+    ssm.pub_campaign_id,
+    sum(sessions) as sessions,
+    sum(ssm.sessions_with_clickouts) as sessions_with_clickouts,
+    sum(ssm.bouncer_sessions) as bouncer_sessions,
+    sum(ssm.session_with_bookings) as sessions_with_bookings,
+    sum(ssm.clickouts) as clickouts,
+    sum(ssm.bookings) as bookings,
+    sum(ssm.booking_amount) as booking_amount,
+    sum(ssm.clickout_rev_euros) as clickout_rev_euros,
+    sum(ssm.sessions_with_engaged_clickouts) as sessions_with_engaged_clickouts,
+    sum(ssm.engaged_clickouts) as engaged_clickouts
+FROM
+    vregu.sem_raw_campaign ssm 
+    LEFT JOIN CTE_SEM_DATA sem on
+        sem.pub_campaign_id = ssm.pub_campaign_id
+        and sem.cip_publisher = ssm.cip_publisher
+WHERE 
+    ssm.traffic_type='SEM'
+    --and traffic_type_child not in (205,206)
+    and ssm.pub_campaign_id is not null
+    and ssm.pub_campaign_id > 0
+    
+GROUP BY
+    ssm.locale,
+    ssm.device_type,
+    ssm.entry_page,
+    ssm.standard_date,
+    ssm.time_to_travel,
+    ssm.los,
+    ssm.search_types,
+    ssm.group_information_kid,
+    sem.theme_id,
+    sem.theme_name_english,
+    ssm.cip_publisher,
+    ssm.pub_campaign_id;
+    
+    
+SELECT 
+    --(case when cip_publisher in ('bing_dsa','dsa_search') then 'DSA' else theme_name_english end) as theme_name,
+    
+    theme_id,
+    theme_name_english,
+    cip_publisher,
+   -- pub_campaign_id,
+    sum(sessions) as sessions,
+    sum(sessions_with_clickouts) as sessions_with_clickouts,
+    sum(bouncer_sessions) as bouncer_sessions,
+    sum(sessions_with_bookings) as sessions_with_bookings,
+    sum(clickouts) as clickouts,
+    sum(bookings) as bookings,
+    sum(booking_amount) as booking_amount,
+    sum(clickout_rev_euros) as clickout_rev_euros,
+    sum(sessions_with_engaged_clickouts) as sessions_with_engaged_clickouts,
+    sum(engaged_clickouts) as engaged_clickouts
+FROM 
+    vregu.sem_campaign_reduced 
+GROUP BY 
+    --(case when cip_publisher in ('bing_dsa','dsa_search') then 'DSA' else theme_name_english end),
+    theme_id,
+    theme_name_english,
+    cip_publisher;
+   -- pub_campaign_id;
+    
