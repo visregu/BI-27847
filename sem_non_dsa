@@ -310,10 +310,10 @@ WITH CTE_SEM_DATA AS
         sem_campaign.cip_publisher
     FROM
         sem.sem_metadata_main_campaign AS sem_campaign
-    WHERE 
+    --WHERE 
         --sem_campaign.publisher_id in (0,1)
-        sem_campaign.campaign_status='active'
-        and sem_campaign.pub_campaign_id is not null
+        --sem_campaign.campaign_status='active'
+        --and sem_campaign.pub_campaign_id is not null
         --and sem_campaign.theme_id>1
     GROUP BY 
         pub_campaign_id,
@@ -377,7 +377,7 @@ SELECT
     theme_id,
     theme_name_english,
     cip_publisher,
-   -- pub_campaign_id,
+    --pub_campaign_id,
     sum(sessions) as sessions,
     sum(sessions_with_clickouts) as sessions_with_clickouts,
     sum(bouncer_sessions) as bouncer_sessions,
@@ -390,10 +390,13 @@ SELECT
     sum(engaged_clickouts) as engaged_clickouts
 FROM 
     vregu.sem_campaign_reduced 
+--WHERE 
+    --cip_publisher='google_search'
+    --and isnull(theme_id)
 GROUP BY 
     --(case when cip_publisher in ('bing_dsa','dsa_search') then 'DSA' else theme_name_english end),
     theme_id,
     theme_name_english,
     cip_publisher;
-   -- pub_campaign_id;
+    --pub_campaign_id;
     
